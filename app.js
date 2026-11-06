@@ -3,7 +3,7 @@
    Mesmo formato de dados do editor de PC (JSON v2, embutido no PDF na chave RapportFrigotecData),
    então rapports feitos aqui abrem no PC e vice-versa. */
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const PW = 595.276, PH = 841.89;
 const DATA_KEY = 'RapportFrigotecData';
 const LANGS = ['en', 'de', 'es'];
@@ -813,18 +813,42 @@ function askSend(rec, direct, saved) {
 }
 function goHome() { const n = stack.length - 1; if (n > 0) history.go(-n); }
 function later(rec) { goHome(); toast(t('laterToast')); }   // o rapport fica na lista marcado "a enviar"
-async function share(rec, via) {
+// plain = true: manda só o arquivo, sem título/texto (alguns navegadores recusam arquivo + texto)
+async function share(rec, via, plain) {
   const file = new File([rec.pdf], fileNameOf(rec.doc) + '.pdf', { type: 'application/pdf' });
-  if (!(navigator.canShare && navigator.canShare({ files: [file] }))) { toast(t('noShare'), 'warn', 7000); return; }
+  if (!(navigator.canShare && navigator.canShare({ files: [file] }))) { shareFail(rec, via, null, true); return; }
   if (via !== 'other') toast(t('pickApp', via === 'wa' ? 'WhatsApp' : via === 'tg' ? 'Telegram' : t('emailApp')), '', 2500);
   const h = rec.doc.head;
+  const data = plain ? { files: [file] }
+    : { files: [file], title: fileNameOf(rec.doc), text: t('shareText', h.Client.trim(), h.Date ? isoToTxt(h.Date, true, rec.doc.idioma) : '', h.Report_No.trim()) };
   try {
-    await navigator.share({ files: [file], title: fileNameOf(rec.doc), text: t('shareText', h.Client.trim(), h.Date ? isoToTxt(h.Date, true, rec.doc.idioma) : '', h.Report_No.trim()) });
-  } catch (e) { if (e.name !== 'AbortError') toast(t('shareErr', e.message), 'warn', 6000); return; }
+    await navigator.share(data);
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    console.warn('share', plain ? 'plain' : 'full', e);
+    shareFail(rec, via, e, plain);
+    return;
+  }
+  markSent(rec, via);
+}
+async function markSent(rec, via) {
   rec.status = 'sent'; rec.sentAt = Date.now(); rec.sentVia = via; await DB.put(rec);
   if (cur && cur.id === rec.id) { cur.status = 'sent'; updateBadges(); }
   goHome(); setTimeout(renderHome, 250);
   toast(t('sentToast'));
+}
+// o envio falhou: oferece tentar de novo só com o PDF (precisa de um toque novo) ou enviar à mão
+function shareFail(rec, via, e, final) {
+  $('toast').className = '';
+  const samsung = /SamsungBrowser/i.test(navigator.userAgent);
+  openSheet([el('h2', { html: icon('alert') + ' ' + t('shareFailT') }),
+    el('p', null, e ? t('shareErr', e.message || e.name) : t('noShare')),
+    samsung ? el('div', { class: 'warnbox' }, t('samsungHint')) : null,
+    el('p', null, t('manualHint', fileNameOf(rec.doc) + '.pdf')),
+    el('div', { class: 'opts' },
+      final ? null : opt('main', 'send', t('retryPlain'), t('retryPlainHint'), () => share(rec, via, true)),
+      opt('', 'check', t('markSent'), t('markSentHint'), () => markSent(rec, 'manual')),
+      opt('', 'later', t('later'), t('laterHint'), () => later(rec)))]);
 }
 
 /* ------------------------------------------------------------------ folha de opções */

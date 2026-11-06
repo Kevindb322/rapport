@@ -1,6 +1,6 @@
 // Service worker: guarda o app no celular para funcionar sem internet.
 // Ao publicar uma versão nova, mude o número abaixo (e APP_VERSION no app.js).
-const CACHE = 'rapport-v1.0.0';
+const CACHE = 'rapport-v1.0.1';
 const FILES = ['./', 'index.html', 'app.css', 'app.js', 'i18n.js', 'forms.js', 'pdf-lib.min.js', 'manifest.webmanifest',
   'forms/blank_en.pdf', 'forms/blank_de.pdf', 'forms/blank_es.pdf', 'forms/bg_en.png', 'forms/bg_de.png', 'forms/bg_es.png',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png', 'icons/icon-maskable-512.png'];
