@@ -3,7 +3,7 @@
    Mesmo formato de dados do editor de PC (JSON v2, embutido no PDF na chave RapportFrigotecData),
    então rapports feitos aqui abrem no PC e vice-versa. */
 
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 const PW = 595.276, PH = 841.89;
 const DATA_KEY = 'RapportFrigotecData';
 const LANGS = ['en', 'de', 'es'];
@@ -641,7 +641,7 @@ function renderSign() {
       el('button', { type: 'button', onclick: () => $('fSig').click() }, saved ? t('changeSaved') : t('chooseImg')),
       (d.sig.tecnico || d.assinar) && el('button', { type: 'button', onclick: () => { d.sig.tecnico = null; d.assinar = false; touch(); renderSign(); toast(t('sigRemoved')); } }, t('removeSig'))),
     tile('cliente'),
-    d.sig.cliente ? el('div', { class: 'siglinks' }, el('button', { type: 'button', onclick: () => { d.sig.cliente = null; touch(); renderSign(); toast(t('sigRemoved')); } }, t('removeSig'))) : null);
+    d.sig.cliente ? el('div', { class: 'siglinks' }, el('button', { type: 'button', onclick: () => { d.sig.cliente = null; touch(); renderSign(); toast(t('sigRemoved')); } }, t('removeSig'))) : '');
 }
 // imagem da assinatura salva no aparelho (sempre convertida para PNG)
 $('fSig').addEventListener('change', async e => {
