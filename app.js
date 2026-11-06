@@ -3,7 +3,7 @@
    Mesmo formato de dados do editor de PC (JSON v2, embutido no PDF na chave RapportFrigotecData),
    então rapports feitos aqui abrem no PC e vice-versa. */
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 const PW = 595.276, PH = 841.89;
 const DATA_KEY = 'RapportFrigotecData';
 const LANGS = ['en', 'de', 'es'];
@@ -890,16 +890,20 @@ $('bInstall').addEventListener('click', async () => { if (!installEvt) return; i
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
+  // mostra o aviso de versão nova; também quando ela já estava baixada e esperando (app reaberto)
+  const askUpdate = (reg, w) => {
+    if (!navigator.serviceWorker.controller || !$('sheet').hidden) return;
+    openSheet([el('h2', null, t('updTitle')), el('p', null, t('updHint')),
+      el('div', { class: 'opts' }, opt('main', 'check', t('updNow'), null, () => { (reg.waiting || w).postMessage('skip'); }), opt('', 'later', t('later'), null, back))]);
+  };
   navigator.serviceWorker.register('sw.js').then(reg => {
+    if (reg.waiting) askUpdate(reg, reg.waiting);
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;
-      nw.addEventListener('statechange', () => {
-        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-          openSheet([el('h2', null, t('updTitle')), el('p', null, t('updHint')),
-            el('div', { class: 'opts' }, opt('main', 'check', t('updNow'), null, () => { (reg.waiting || nw).postMessage('skip'); }), opt('', 'later', t('later'), null, back))]);
-        }
-      });
+      nw.addEventListener('statechange', () => { if (nw.state === 'installed') askUpdate(reg, nw); });
     });
+    // procura versão nova sempre que o app volta para a tela
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') return; if (reg.waiting) askUpdate(reg, reg.waiting); else reg.update().catch(() => {}); });
   }).catch(() => {});
 }
 
