@@ -3,7 +3,7 @@
    Mesmo formato de dados do editor de PC (JSON v2, embutido no PDF na chave RapportFrigotecData),
    então rapports feitos aqui abrem no PC e vice-versa. */
 
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 const PW = 595.276, PH = 841.89;
 const DATA_KEY = 'RapportFrigotecData';
 const LANGS = ['en', 'de', 'es'];
