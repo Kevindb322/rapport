@@ -3,7 +3,7 @@
    Mesmo formato de dados do editor de PC (JSON v2, embutido no PDF na chave RapportFrigotecData),
    então rapports feitos aqui abrem no PC e vice-versa. */
 
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 const PW = 595.276, PH = 841.89;
 const DATA_KEY = 'RapportFrigotecData';
 const LANGS = ['en', 'de', 'es'];
@@ -104,7 +104,7 @@ function blankDoc() {
     report: [], times: [], material: [], totals: {}, sig: { tecnico: null, cliente: null }, assinar: false, fileName: ''
   };
 }
-const TIME_KEYS = ['date', 'dateRaw', 'tech', 'ob', 's', 'e', 'rt', 'total', 'p25', 'p50', 'p100', 'allow', 'km'];
+const TIME_KEYS = ['date', 'dateRaw', 'tech', 'ob', 's', 'e', 'rt', 'total', 'totalOv', 'p25', 'p50', 'p100', 'allow', 'km'];
 const emptyTime = r => !TIME_KEYS.some(k => String(r[k] || '').trim());
 const emptyMat = m => !['qty', 'desc', 'item', 'price'].some(k => String(m[k] || '').trim());
 function trimEnd(a, isEmpty) { let n = a.length; while (n > 0 && isEmpty(a[n - 1])) n--; return a.slice(0, n); }
@@ -118,7 +118,10 @@ function rowCalc(r) {
   if (!auto) return { auto: false, total: num(parseT(r.total)), work: null, S: null };
   let work = null; if (S !== null && E !== null) { work = E - S; if (work < 0) work += 1440; }
   const travel = (OB || 0) + (RT || 0);
-  return { auto: true, work, S, travel, total: (work !== null || travel) ? (work || 0) + travel : null };
+  const calc = (work !== null || travel) ? (work || 0) + travel : null;
+  const ov = num(parseT(r.totalOv));                 // total corrigido à mão (1.0.6)
+  if (ov !== null) return { auto: true, ov: true, work, S, travel, calc, total: ov };
+  return { auto: true, work, S, travel, calc, total: calc };
 }
 // Grand total: no mesmo dia, horários de trabalho sobrepostos contam uma vez só; viagens entram inteiras.
 function calcAll(times) {
@@ -126,7 +129,7 @@ function calcAll(times) {
   rows.forEach((c, i) => {
     if (c.total === null) return;
     any = true;
-    if (!c.auto) { grand += c.total; return; }
+    if (!c.auto || c.ov) { grand += c.total; return; }
     grand += c.travel;
     if (c.work !== null) {
       const r = times[i], key = r.date || ('#' + i);
@@ -144,6 +147,11 @@ function calcAll(times) {
     if (raw > uni) overlaps.push({ min: raw - uni, date: d.date });
   }
   return { rows, grand, any, overlaps };
+}
+// Gesamtsumme final: a corrigida à mão (d.totals.grandOv), se houver; senão a calculada.
+function grandOf(d, c) {
+  const ov = num(parseT((d.totals || {}).grandOv));
+  return ov !== null ? { ov: true, total: ov, calc: c.any ? c.grand : null } : { ov: false, total: c.any ? c.grand : null, calc: c.any ? c.grand : null };
 }
 function autoName(d) { return ['Rapport', d.head.Client.trim(), d.head.Report_No.trim()].filter(Boolean).join(' '); }
 function fileNameOf(d) { return ((d.fileName || '').trim() || autoName(d)).replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim() || 'Rapport'; }
@@ -169,7 +177,8 @@ function toDoc(d) {
     set(f, p + 'Allowance', r.allow); set(f, p + 'Km_round', r.km);
   });
   const gs = last >= 0 ? Math.floor(last / 8) : Math.max(0, Math.ceil(tm.length / 8) - 1);
-  if (calc.any) folhas[gs].Total_Total_hours = hmStr(calc.grand);
+  const G = grandOf(d, calc);
+  if (G.total !== null) folhas[gs].Total_Total_hours = hmStr(G.total);
   for (const k of TOTAL_EXTRA) set(folhas[gs], k, d.totals[k]);
   mt.forEach((m, i) => {
     const f = folhas[Math.floor(i / 13)], p = 'Material_row' + (i % 13 + 1) + '_';
@@ -195,12 +204,13 @@ function fromDoc(j) {
   d.head.Date = txtToISO(comuns.Date, fy); d.head.DateRaw = d.head.Date ? '' : (comuns.Date || '');
   d.head.office = [1, 2, 3].find(i => comuns['Office_' + i]) || 0;
   d.report = []; d.times = []; d.material = []; d.totals = {};
+  let grandTxt = '';
   for (const f of folhas) {
     for (let i = 1; i <= 8; i++) d.report.push(f['Report_line_' + i] || '');
     for (let i = 1; i <= 8; i++) {
       const p = 'Times_row' + i + '_', dt = f[p + 'Date'] || '', iso = txtToISO(dt, fy);
       d.times.push({ date: iso, dateRaw: iso ? '' : dt, tech: f[p + 'Technician'] || '', ob: f[p + 'Outbound_travel'] || '',
-        s: f[p + 'Work_time_start'] || '', e: f[p + 'Work_time_end'] || '', rt: f[p + 'Return_travel'] || '', total: f[p + 'Total_hours'] || '',
+        s: f[p + 'Work_time_start'] || '', e: f[p + 'Work_time_end'] || '', rt: f[p + 'Return_travel'] || '', total: f[p + 'Total_hours'] || '', totalOv: '',
         p25: f[p + '25pct'] || '', p50: f[p + '50pct'] || '', p100: f[p + '100pct'] || '', allow: f[p + 'Allowance'] || '', km: f[p + 'Km_round'] || '' });
     }
     for (let i = 1; i <= 13; i++) {
@@ -208,8 +218,16 @@ function fromDoc(j) {
       d.material.push({ qty: f[p + 'Qty'] || '', desc: f[p + 'Description'] || '', item: f[p + 'Item_No'] || '', price: f[p + 'Price'] || '' });
     }
     for (const k of TOTAL_EXTRA) if (f[k]) d.totals[k] = f[k];
+    if (f.Total_Total_hours) grandTxt = f.Total_Total_hours;
   }
   d.report = trimEnd(d.report, l => !l.trim()); d.times = trimEnd(d.times, emptyTime); d.material = trimEnd(d.material, emptyMat);
+  // Total de linha ou Gesamtsumme diferente da conta = foi corrigido à mão: vira correção manual
+  for (const r of d.times) {
+    const c = rowCalc(r), saved = num(parseT(r.total));
+    if (c.auto) { if (saved !== null && saved !== c.calc) r.totalOv = hmStr(saved); r.total = ''; }
+  }
+  const gSaved = num(parseT(grandTxt)), gc = calcAll(d.times);
+  if (gSaved !== null && gSaved !== (gc.any ? gc.grand : null)) d.totals.grandOv = hmStr(gSaved);
   d.sig = { tecnico: (j.assinaturas || {}).tecnico || null, cliente: (j.assinaturas || {}).cliente || null };
   d.assinar = !!j.assinar;
   d.fileName = j.nomeArquivo && j.nomeArquivo !== autoName(d) ? j.nomeArquivo : '';
@@ -550,16 +568,34 @@ function renderTimes() {
   const grand = el('div', { class: 'grand' });
   const list = el('div');
   const totalsEls = [];
+  const pen = '<span class="pen">' + icon('pen') + '</span>';
   const refresh = () => {
     const c = calcAll(d.times);
     c.rows.forEach((r, i) => {
       const te = totalsEls[i]; if (!te) return;
-      if (r.auto) { te.className = 'total'; te.innerHTML = '<span>' + t('rowTotal') + '</span><span>' + (r.total !== null ? hmStr(r.total) : '—') + '</span>'; te.manual.hidden = true; }
-      else { te.className = 'total manual'; te.innerHTML = '<span>' + t('rowTotal') + (r.total !== null ? ' (' + t('manual') + ')' : '') + '</span><span>' + (r.total !== null ? hmStr(r.total) : '—') + '</span>'; te.manual.hidden = false; }
+      if (r.auto) {
+        te.className = 'total' + (r.ov ? ' ov' : '');
+        te.innerHTML = '<span>' + t('rowTotal') + (r.ov ? ' (' + t('manual') + ')' : '') + '</span><span class="v">' +
+          (r.ov && r.calc !== null ? '<s>' + hmStr(r.calc) + '</s> ' : '') + (r.total !== null ? hmStr(r.total) : '—') + pen + '</span>';
+        te.manual.hidden = true; te.ovReset.textContent = t('useCalc', r.calc !== null ? hmStr(r.calc) : '—');
+        if (r.ov) te.ovBox.hidden = false;
+      } else { te.className = 'total manual'; te.innerHTML = '<span>' + t('rowTotal') + (r.total !== null ? ' (' + t('manual') + ')' : '') + '</span><span>' + (r.total !== null ? hmStr(r.total) : '—') + '</span>'; te.manual.hidden = false; te.ovBox.hidden = true; }
     });
-    grand.innerHTML = '<small>' + t('grandTotal') + (layout(d).n > 1 ? ' · ' + t('allSheets') : '') + '</small><div class="big">' + (c.any ? hmStr(c.grand) : '—') + '</div>' +
-      (c.overlaps.length ? '<div class="ovl">' + t('ovl', c.overlaps.map(o => hmStr(o.min) + ' ' + t('on') + ' ' + (o.date ? isoToTxt(o.date, false) : '?')).join(', ')) + '</div>' : '<small>' + t('grandHint') + '</small>');
+    const G = grandOf(d, c);
+    grand.className = 'grand' + (G.ov ? ' ov' : '');
+    grand.innerHTML = '<small>' + t('grandTotal') + (G.ov ? ' (' + t('manual') + ')' : '') + (layout(d).n > 1 ? ' · ' + t('allSheets') : '') + '</small><div class="big">' +
+      (G.total !== null ? hmStr(G.total) : '—') + pen + '</div>' +
+      (G.ov ? '<small>' + t('calcWas', G.calc !== null ? hmStr(G.calc) : '—') + '</small>' :
+      (c.overlaps.length ? '<div class="ovl">' + t('ovl', c.overlaps.map(o => hmStr(o.min) + ' ' + t('on') + ' ' + (o.date ? isoToTxt(o.date, false) : '?')).join(', ')) + '</div>' : '<small>' + t('grandHint') + '</small>'));
+    gReset.textContent = t('useCalc', G.calc !== null ? hmStr(G.calc) : '—');
+    if (G.ov) gBox.hidden = false;
   };
+  // Gesamtsumme: tocar no quadro azul abre o campo para corrigir à mão
+  const gInp = inp(t('grandOvField'), d.totals, 'grandOv', { inputmode: 'numeric', ph: '00:00', hm: 'dur', oninput: () => refresh() });
+  const gReset = el('button', { type: 'button', class: 'more', onclick: () => {
+    d.totals.grandOv = ''; gInp.querySelector('input').value = ''; gBox.hidden = true; touch(); refresh(); toast(t('backToCalc')); } });
+  const gBox = el('div', { class: 'card ovbox', hidden: !(d.totals.grandOv || '').trim() }, gInp, el('p', { class: 'help' }, t('ovHint')), gReset);
+  grand.addEventListener('click', () => { gBox.hidden = false; const i = gInp.querySelector('input'); i.focus(); });
   const dlt = techList();
   d.times.forEach((r, i) => {
     const date = el('input', { type: 'date', value: r.date || '' });
@@ -571,6 +607,12 @@ function renderTimes() {
     };
     const manual = inp(t('rowTotalField'), r, 'total', { inputmode: 'numeric', ph: '00:00', hm: 'dur', oninput: refresh });
     const te = el('div', { class: 'total' }); te.manual = manual; totalsEls[i] = te;
+    // total automático: tocar para corrigir à mão (r.totalOv)
+    const ovInp = inp(t('rowOvField'), r, 'totalOv', { inputmode: 'numeric', ph: '00:00', hm: 'dur', oninput: refresh });
+    te.ovReset = el('button', { type: 'button', class: 'more', onclick: () => {
+      r.totalOv = ''; ovInp.querySelector('input').value = ''; te.ovBox.hidden = true; touch(); refresh(); toast(t('backToCalc')); } });
+    te.ovBox = el('div', { class: 'ovbox', hidden: !(r.totalOv || '').trim() }, ovInp, te.ovReset);
+    te.addEventListener('click', () => { if (!rowCalc(r).auto) return; te.ovBox.hidden = false; ovInp.querySelector('input').focus(); });
     const moreBox = el('div', { hidden: !(r.p25 || r.p50 || r.p100 || r.allow || r.km || (r.total && !rowCalc(r).auto)) }, manual,
       el('div', { class: 'row3' }, inp('25%', r, 'p25', { inputmode: 'numeric', hm: 'dur', ph: '00:00' }), inp('50%', r, 'p50', { inputmode: 'numeric', hm: 'dur', ph: '00:00' }),
         inp('100%', r, 'p100', { inputmode: 'numeric', hm: 'dur', ph: '00:00' })),
@@ -586,13 +628,13 @@ function renderTimes() {
       el('div', { class: 'row2' }, inp(t('travelOut'), r, 'ob', { inputmode: 'numeric', ph: '00:00', hm: 'dur', oninput: refresh }),
         inp(t('travelBack'), r, 'rt', { inputmode: 'numeric', ph: '00:00', hm: 'dur', oninput: refresh })),
       el('div', { class: 'row2' }, time(t('workStart'), 's'), time(t('workEnd'), 'e')),
-      te, moreBtn, moreBox));
+      te, te.ovBox, moreBtn, moreBox));
   });
   const add = el('button', { class: 'add', type: 'button', html: icon('plus') + '<span>' + t('addDay') + '</span>' });
   add.addEventListener('click', () => {
     const last = d.times[d.times.length - 1];
     d.times.push({ date: last && last.date ? addDays(last.date, 1) : (d.head.Date || todayISO()), dateRaw: '', tech: last ? last.tech : (d.head.Responsible_technician || ''),
-      ob: '', s: '', e: '', rt: '', total: '', p25: '', p50: '', p100: '', allow: '', km: '' });
+      ob: '', s: '', e: '', rt: '', total: '', totalOv: '', p25: '', p50: '', p100: '', allow: '', km: '' });
     touch(); renderTimes();
     const cards = $('tab-times').querySelectorAll('.card'); const c = cards[d.times.length - 1]; if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
@@ -602,7 +644,7 @@ function renderTimes() {
     el('div', { class: 'row2' }, inp(t('allowance'), d.totals, 'Total_Allowance'), inp(t('km'), d.totals, 'Total_Km_round', { inputmode: 'decimal' })));
   const exBtn = el('button', { type: 'button', class: 'more' + (ex.hidden ? '' : ' open'), html: '<span>' + t('otherTotals') + '</span>' + icon('down') });
   exBtn.addEventListener('click', () => { ex.hidden = !ex.hidden; exBtn.classList.toggle('open', !ex.hidden); });
-  box.append(...[grand, d.times.length ? null : el('div', { class: 'info' }, t('timesInfo')), list, add,
+  box.append(...[grand, gBox, d.times.length ? null : el('div', { class: 'info' }, t('timesInfo')), list, add,
     el('div', { class: 'card' }, exBtn, ex)].filter(Boolean));
   refresh();
 }

@@ -102,6 +102,16 @@ svg.ic { width:22px; height:22px; flex:none; stroke:currentColor; fill:none; str
 .total { display:flex; justify-content:space-between; align-items:center; background:var(--okbg); color:var(--ok); border-radius:10px;
   padding:10px 12px; font-weight:700; }
 .total.manual { background:#f3f5f8; color:var(--muted); font-weight:600; }
+.total:not(.manual) { cursor:pointer; }
+.total.ov { background:#fff4e0; color:#8a5a00; }
+.total .v { white-space:nowrap; }
+.total .v s, .grand s { opacity:.6; font-weight:500; margin-right:4px; }
+.pen { display:inline-grid; vertical-align:middle; margin-left:8px; opacity:.7; }
+.pen svg { width:16px; height:16px; }
+.grand .pen svg { width:20px; height:20px; }
+.ovbox { margin-top:10px; }
+.grand { cursor:pointer; }
+.grand.ov { background:#8a5a00; }
 .more { color:var(--navy); font-weight:600; font-size:14px; padding:8px 0 0; display:flex; align-items:center; gap:4px; }
 .more svg { width:18px; height:18px; transition:transform .2s; } .more.open svg { transform:rotate(180deg); }
 .grand { background:var(--navy); color:#fff; border-radius:var(--r); padding:14px 16px; margin-bottom:12px; }
